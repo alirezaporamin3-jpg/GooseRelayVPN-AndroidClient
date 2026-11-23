@@ -485,7 +485,508 @@ See [LICENSE](LICENSE) file for details.
 
 ## Support & Contributing
 
+- **Issues**: Report # GooseRelayVPN Android Client
+🌐 **[فارسی](README_FA.md)** 
+
+[![Version](https://img.shields.io/badge/version-1.7.1-brightgreen)]()
+[![Go Version](https://img.shields.io/badge/go-1.25.0-00ADD8)]()
+[![Kotlin](https://img.shields.io/badge/kotlin-2.1.0-7F52FF)]()
+
+Android client for GooseRelayVPN that runs the GooseRelay core through a Go mobile bridge and provides a complete Android UI for VPN lifecycle, profiles, logs, and settings.
+
+- Upstream core project: https://github.com/kianmhz/GooseRelayVPN
+- This repository: Android-focused client implementation
+
+## What This App Does
+
+This app creates a local SOCKS5 endpoint on Android and tunnels TCP traffic through the GooseRelay architecture:
+
+1. Local app/browser traffic → SOCKS5
+2. GooseRelay encrypted framing (AES-256-GCM key from your profile)
+3. HTTPS path through Google-facing endpoints (Apps Script flow)
+4. Your VPS exit server handles outbound target connections
+
+The app wraps this flow in Android `VpnService` so selected/full traffic can be routed through the tunnel.
+
+## App Screenshots
+
+<table>
+  <tr>
+    <td align="center"><strong>Home</strong></td>
+    <td align="center"><strong>Profiles</strong></td>
+    <td align="center"><strong>Settings</strong></td>
+    <td align="center"><strong>Logs</strong></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/home.png" alt="Home Screen" width="300"/></td>
+    <td><img src="screenshots/profiles.png" alt="Profiles Manager" width="300"/></td>
+    <td><img src="screenshots/settings.png" alt="Settings Screen" width="300"/></td>
+    <td><img src="screenshots/logs.png" alt="Logs" width="300"/></td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td align="center"><strong>Profile Import</strong></td>
+    <td align="center"><strong>Profile Sharing</strong></td>
+    <td align="center"><strong>Settings Sharing</strong></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/import-profile.png" alt="Import Profile" width="300"/></td>
+    <td><img src="screenshots/share-profile.png" alt="Share Profile" width="300"/></td>
+    <td><img src="screenshots/import&share-settings.png" alt="Share Settings" width="300"/></td>
+  </tr>
+</table>
+
+## Key Features
+
+### VPN & Tunneling
+- 🔐 Android VPN integration (Android `VpnService` + gVisor TUN bridge)
+- 🔌 SOCKS5 proxy endpoint (configurable host:port)
+- 🛡️ AES-256-GCM encryption with per-profile keys
+- 📍 Domain fronting through Google infrastructure
+- 🎯 Split tunneling with package selection
+
+### Profile Management (v1.7.1+)
+- 📋 **Remote profile subscriptions** - Sync profiles from remote HTTPS URLs (manual refresh)
+- 🔗 **goose-relay:// protocol** - Share full profile configuration via Base64-encoded URI scheme
+- 📤 **JSON import/export** - Profile backup and restore via file
+- 📋 **Clipboard import/export** - Quick copy-paste profile sharing
+- 🔄 **Remote updates** - One-click refresh from remote source
+- ⚙️ **Auto-save** - Changes saved automatically to local database
+
+### Configuration
+- **Multiple deployment IDs** - Support for multiple Google Apps Script deployments
+- **Custom SOCKS settings** - Host, port, and optional auth (username/password)
+- **SNI list** - Customizable Server Name Indication hostnames
+- **Coalescing** - Fine-tune tunnel packet coalescing behavior
+- **Idle slots** - Control idle slot distribution per bucket
+
+### User Interface
+- 🏠 **Home tab** - Real-time connection status with telemetry cards
+- 📊 **Live logs** - Core and app-level diagnostic logs
+- ⚙️ **Settings tab** - Global settings (connection mode, split tunneling, internet sharing)
+- 🌍 **Profile settings** - Per-profile configuration (opened from Profiles)
+- 🎨 Material Design 3 with dark theme
+
+### System Integration
+- 📱 **Internet sharing** - Share VPN via SOCKS/HTTP proxy (LAN)
+- 🔒 **Split tunneling** - Include/exclude specific apps from VPN
+- 🌐 **Local Fake-IP DNS** - In-bridge DNS answering with fake IPs; domain resolution happens remotely at the exit node
+- 🔋 **Low overhead** - Efficient Go-based core
+
+## Configuration Model (Profile)
+
+Profile fields are aligned with GooseRelay client config. Create profiles manually or import JSON:
+
+```json
+{
+  "name": "My VPN Profile",
+  "debug_timing": false,
+  "socks_host": "127.0.0.1",
+  "socks_port": 1080,
+  "socks_user": "",
+  "socks_pass": "",
+  "google_host": "216.239.38.120",
+  "sni": [
+    "www.google.com",
+    "mail.google.com",
+    "accounts.google.com"
+  ],
+  "script_keys": [
+    "REPLACE_WITH_DEPLOYMENT_ID",
+    "OPTIONAL_SECOND_DEPLOYMENT_ID|account@example.com"
+  ],
+  "tunnel_key": "REPLACE_WITH_OUTPUT_OF_scripts_gen-key.sh",
+  "coalesce_step_ms": 0,
+  "idle_slots_per_bucket": 2
+}
+```
+
+### Profile Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Profile display name |
+| `debug_timing` | boolean | Enable timing debug logs |
+| `socks_host` | string | SOCKS5 server host (usually `127.0.0.1`) |
+| `socks_port` | integer | SOCKS5 server port (1-65535) |
+| `socks_user` | string | SOCKS5 username (optional, paired with password) |
+| `socks_pass` | string | SOCKS5 password (optional, paired with username) |
+| `google_host` | string | Google IP for domain fronting |
+| `sni` | array | SNI hostnames for TLS |
+| `script_keys` | array/string | Google Apps Script deployment ID(s). Format: `ID` or `ID\|account` |
+| `tunnel_key` | string | Tunnel encryption key (server-side match required) |
+| `coalesce_step_ms` | integer | Packet coalescing timeout (milliseconds) |
+| `idle_slots_per_bucket` | integer | Idle slots per bucket (1-3) |
+
+### Profile Import/Export Methods (v1.7.1+)
+
+#### 1. Manual Profile
+- Tap the `+` button → Select "Add Manual"
+- Fill in fields directly in the form
+
+#### 2. JSON File
+- Tap the `+` button → Select "From JSON File"
+- Choose a `.json` file from your device
+- Profile fields are auto-populated
+
+#### 3. Clipboard (Recommended) — **NEW**
+- Copy JSON or `goose-relay://` protocol to clipboard
+- Tap the `+` button → Select "From Clipboard"
+- Profile is created instantly
+
+#### 4. Profile Sharing (goose-relay:// Protocol) — **NEW**
+- Open a profile → Tap **Share** icon
+- Select "to Clipboard" to copy `goose-relay://` URI (contains full profile configuration)
+- Share the copied URI via messaging or link
+- Recipients copy it to clipboard and tap "From Clipboard"
+
+### Remote Profile Subscriptions (v1.7.1+) — **NEW**
+
+#### Setting Up Remote Sync
+1. **Edit Profile** and add Remote URL: `https://your-server.com/profiles/my-profile.json`
+2. Profile content is fetched from this URL only when you manually refresh (no automatic sync)
+3. **Tap Refresh** (↻) icon in Profiles toolbar to manually sync
+4. Changes save locally automatically
+
+#### Remote URL Format
+```
+https://example.com/path/to/profile.json
+```
+
+Supported endpoints:
+- Any HTTPS server hosting profile JSON (system certificate trust is used; self-signed certs must be added to the system trust store)
+- No dedicated HTTP Basic Auth handling in the app; URL-embedded credentials (`https://user:pass@...`) are passed to `HttpURLConnection` as-is and may not authenticate
+
+#### Auto-Update Behavior
+- Profiles with remote URLs fetch on **manual refresh** only (not automatic)
+- All fields except `remoteUrl` are updated from remote
+- Local changes are preserved if remote URL is not set
+- On update failure, error message displayed in snackbar
+
+## Global Settings
+
+### Connection Mode
+- **VPN**: Full VPN routing (default)
+- **PROXY**: Direct proxy mode without VPN routing
+
+### Tunneling
+- **Split Tunneling**: Enable per-app VPN selection (default: disabled)
+- **Mode**: Include selected apps or exclude selected apps
+
+### Internet Sharing
+- **Share VPN via Network**: Enable/disable
+- **SOCKS Port**: Proxy port for LAN devices (default: 8090)
+- **HTTP Port**: HTTP proxy port (default: 8091)
+- **Auth**: Optional username/password for proxies
+
+### Advanced
+- **Auto-save**: Changes persist automatically (default: enabled in v1.7.1+)
+
+### Clipboard Export/Import (v1.7.1+) — **NEW**
+- Tap **⋮** (More) menu in the Settings tab toolbar (Global Settings screen)
+- **Export to Clipboard** — Copy global settings as JSON (sharing credentials excluded)
+- **Import from Clipboard** — Paste previously exported settings
+
+## Upstream Setup Flow (Required)
+
+You still need upstream infrastructure prepared first:
+
+1. **Prepare VPS**
+   - Deploy VPS with public IP
+   - Run `goose-server` binary
+   - Note the VPS IP/domain
+
+2. **Deploy Google Apps Script**
+   - Copy `apps_script/Code.gs` from upstream repo
+   - Create Google Apps Script project
+   - Paste code and deploy as web app
+   - Note the **Deployment ID**
+
+3. **Generate Encryption Key**
+   - Run `scripts/gen-key.sh`
+   - Output is your `tunnel_key`
+
+4. **Add Profile to App**
+   - Create new profile in app
+   - Set `script_keys` to deployment ID(s)
+   - Set `tunnel_key` to generated key
+   - Set `google_host` (usually 216.239.38.120)
+
+5. **Connect & Verify**
+   - Tap **Connect** on Home
+   - Check **Logs** for any errors
+   - Verify traffic flows through VPN
+
+For complete infrastructure details, see upstream docs:
+- https://github.com/kianmhz/GooseRelayVPN
+
+## Android Build (Local Development)
+
+### Requirements
+- Android Studio 2024.1+
+- JDK 17+
+- Go 1.25.0+ (was 1.22, upgraded in v1.7.1)
+- Android SDK API 36+
+- Android NDK (latest)
+
+### Build Go Mobile Bridge
+
+```bash
+bash ./android/build_go_mobile.sh
+```
+
+Or from inside `android/`:
+
+```bash
+cd android
+bash ./build_go_mobile.sh
+```
+
+This creates AAR library with GooseRelay core compiled for all architectures.
+
+### Build Debug APK
+
+```bash
+cd android
+./gradlew :app:assembleDebug
+```
+
+Output: `app/build/outputs/apk/debug/GooseRelayVPN.apk`
+
+### Build Release APK
+
+Requires signing configuration via environment variables (read in `android/app/build.gradle.kts`):
+
+```bash
+ANDROID_SIGNING_ENABLED=true
+ANDROID_KEYSTORE_PATH=/path/to/keystore.jks
+ANDROID_KEYSTORE_PASSWORD=keystore_password
+ANDROID_KEY_ALIAS=key_alias
+ANDROID_KEY_PASSWORD=key_password
+```
+
+Then:
+
+```bash
+cd android
+./gradlew :app:bundleRelease
+```
+
+Output: `app/build/outputs/bundle/release/app-release.aab`
+
+## Release & CI/CD
+
+### GitHub Workflows
+
+**`.github/workflows/android-ci.yml`**
+- Runs on every push to `main`/`master` and on every pull request
+- Builds the Go mobile AAR (`bash ./android/build_go_mobile.sh`)
+- Builds the debug APK (`./gradlew :app:assembleDebug`)
+- Runs unit tests (`./gradlew :app:testDebugUnitTest`) — added in
+  the test-baseline work; if your branch is older, this step may not
+  be present yet
+- Uploads the APK and AAR as workflow artifacts for download from the
+  Actions tab
+
+**`.github/workflows/release-manual.yml`**
+- Manually triggered (`workflow_dispatch`) with a required
+  `tag_name` input (e.g. `v1.2.3`) and optional `release_name` /
+  `make_latest` inputs
+- Builds a signed, split-by-ABI release APK set plus a universal APK
+  and a Go AAR; requires the `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and
+  `ANDROID_KEY_PASSWORD` repo secrets
+- Creates a GitHub Release with `softprops/action-gh-release@v2`
+  and uploads the AAR and all APKs as release assets
+
+> There is **no** `release.yml` workflow. Tag-triggered releases are
+> performed by manually dispatching `release-manual.yml` with the
+> desired tag. If you need a tag-triggered workflow, add one as a
+> sibling to `release-manual.yml` and update this section.
+
+### Secrets Required
+
+Configure these in GitHub repository settings:
+
+- `ANDROID_KEYSTORE_BASE64` — Base64-encoded keystore file
+- `ANDROID_KEYSTORE_PASSWORD` — Keystore password
+- `ANDROID_KEY_ALIAS` — Key alias in keystore
+- `ANDROID_KEY_PASSWORD` — Key password
+
+### Build Artifacts
+
+Release produces:
+- `GooseRelayVPN.apk` — Universal APK (all architectures)
+- `GooseRelayVPN-arm64-v8a.apk` — ARM64 only
+- `GooseRelayVPN-armeabi-v7a.apk` — ARMv7 only
+- `GooseRelayVPN-x86_64.apk` — x86_64 only
+- `app-release.aab` — Google Play App Bundle
+
+## Troubleshooting
+
+### Connection Issues
+
+**SOCKS Port Busy**
+- Disconnect VPN, wait 3 seconds, reconnect
+- Check no other app uses port 1080 (or configured port)
+- Kill app via settings and restart
+
+**Connection Stays "Preparing"**
+- Verify `script_keys` (deployment ID) is correct
+- Verify `tunnel_key` matches server-side key
+- Check **Logs** tab for core error messages
+- Ensure VPS is running and reachable
+
+**No Traffic Flows**
+- Verify VPN permission is granted
+- Check split tunneling app selection
+- Ensure profile is selected and connected
+- Review **Logs** for network errors
+
+### Performance Issues
+
+**High Battery/Data Usage**
+- Disable debug logging (set `debug_timing: false`)
+- Check split tunnel configuration
+- Monitor active connections in **Logs**
+
+**Slow Connections**
+- Try different `google_host` values
+- Adjust `coalesce_step_ms` (higher = more batch, more latency)
+- Test on different networks (WiFi vs mobile)
+
+### Build Issues
+
+**Gradle Error: "Failed to install gomobile"**
+- Check Go version: `go version` (need 1.25.0+)
+- Delete `$GOPATH/pkg/mod/golang.org/x/mobile` and retry
+
+**NDK Not Found**
+- Install via Android Studio: Settings → SDK Manager → SDK Tools
+- Set `ANDROID_NDK` environment variable
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────┐
+│   Android UI Layer (Compose)                │
+│  ┌──────────────────────────────────────┐   │
+│  │ Home │ Profiles │ Settings │ Logs    │   │
+│  └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+            ↓
+┌─────────────────────────────────────────────┐
+│   ViewModels & Repository Layer             │
+│  ┌──────────────────────────────────────┐   │
+│  │ Room Database │ DataStore │ Hilt DI │   │
+│  └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+            ↓
+┌─────────────────────────────────────────────┐
+│   VPN Service & Go Core                     │
+│  ┌──────────────────────────────────────┐   │
+│  │ gVisor bridge │ GooseRelay Core (Go) │   │
+│  └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+            ↓
+┌─────────────────────────────────────────────┐
+│   Network Layer                             │
+│  ┌──────────────────────────────────────┐   │
+│  │ SOCKS5 → Google Apps Script → VPS   │   │
+│  └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────┘
+```
+
+## Version History
+
+### v1.7.1 (Current) — July 2026
+- ✅ **Remote profile subscriptions** with manual refresh
+- ✅ **goose-relay:// protocol** for URL-based profile sharing
+- ✅ **Clipboard import/export** for profiles
+- ✅ **Global settings clipboard** export/import
+- ✅ **Auto-save** for profile and global settings changes
+- ✅ **Dropdown menus** for profile management (+ button, share)
+- ✅ Updated to **Gradle 8.13**, **Android Gradle Plugin 8.13.0**
+- ✅ Updated to **Go 1.25.0** with latest dependencies
+- ✅ JVM memory increased (Xmx4096m)
+- ✅ Fixed SOCKS field defaults in JSON export
+- ✅ Improved error handling for imports
+
+### v1.0.0+ — Earlier Releases
+- VPN service with gVisor TUN bridge
+- Profile management
+- Live logs and diagnostics
+- Split tunneling
+- Internet sharing
+
+## Tech Stack
+
+### Android
+- **Language**: Kotlin 2.1.0
+- **Framework**: Jetpack Compose
+- **Architecture**: MVVM with Clean Architecture
+- **Database**: Room ORM
+- **DI**: Hilt
+- **VPN**: Android VpnService API, gVisor TUN bridge
+- **Build**: Gradle 8.13, Android Gradle Plugin 8.13.0
+
+### Go Core
+- **Version**: 1.25.0 (upgraded from 1.23.1)
+- **Crypto**: AES-256-GCM (golang.org/x/crypto, indirect)
+- **Networking**: golang.org/x/net 0.52.0, gVisor netstack
+- **Compression**: klauspost/compress (indirect)
+- **Logging**: Uber zap (indirect)
+
+### Key Dependencies
+
+**Go:**
+- `github.com/things-go/go-socks5` — SOCKS5 server
+- `gvisor.dev/gvisor/pkg/tcpip` — gVisor netstack TUN bridge
+- `golang.org/x/net v0.52.0` — Networking utilities
+- `golang.org/x/mobile v0.0.0-20260312152759-81488f6aeb60` — Go mobile binding
+- `golang.org/x/crypto v0.49.0` — Cryptography
+
+**Android:**
+- Jetpack Compose, Navigation, Hilt, Room
+- DataStore (Preferences), Gson
+
+See `go.mod`, `go.sum`, and `android/build.gradle.kts` for complete lists.
+
+## Credits
+
+1. **Main GooseRelay Project**
+   - https://github.com/Kianmhz/GooseRelayVPN
+
+2. **Inspiration**
+   - https://github.com/masterking32/MasterHttpRelayVPN
+
+3. **Community**
+   - Go, Kotlin, Jetpack Compose teams
+   - gVisor netstack, SOCKS5, and networking library authors
+
+## License
+
+See [LICENSE](LICENSE) file for details.
+
+## Support & Contributing
+
 - **Issues**: Report bugs on [GitHub Issues](https://github.com/ArashAfkandeh/GooseRelayVPN-AndroidClient/issues)
+- **Discussions**: Join [GitHub Discussions](https://github.com/ArashAfkandeh/GooseRelayVPN-AndroidClient/discussions)
+- **Contributing**: PRs welcome! 
+- **Upstream**: Questions about core protocol → [GooseRelayVPN](https://github.com/kianmhz/GooseRelayVPN)
+
+## Disclaimer
+
+This tool is for educational and authorized use only. Users are responsible for:
+- Compliance with local laws and regulations
+- Proper authorization from network administrators
+- Ethical use of VPN technology
+- Respecting terms of service of infrastructure providers
+
+Developers are not liable for misuse or damages.
+ Issues](https://github.com/ArashAfkandeh/GooseRelayVPN-AndroidClient/issues)
 - **Discussions**: Join [GitHub Discussions](https://github.com/ArashAfkandeh/GooseRelayVPN-AndroidClient/discussions)
 - **Contributing**: PRs welcome! 
 - **Upstream**: Questions about core protocol → [GooseRelayVPN](https://github.com/kianmhz/GooseRelayVPN)
